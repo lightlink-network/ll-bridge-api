@@ -16,8 +16,8 @@ import (
 )
 
 func (i *Indexer) indexEthereum(ctx context.Context) error {
-	minBatchSize := uint64(1)
-	maxBatchSize := uint64(5000)
+	minBatchSize := i.ethereum.Opts.MinBatchSize
+	maxBatchSize := i.ethereum.Opts.MaxBatchSize
 	start := i.ethereum.Opts.DefaultStartBlock
 
 	// Get last indexed block
@@ -49,7 +49,7 @@ func (i *Indexer) indexEthereum(ctx context.Context) error {
 					"chainHead", lastBlock,
 					"nextBatchStart", start,
 					"minBatchSize", minBatchSize)
-				time.Sleep(time.Second * 10)
+				time.Sleep(time.Duration(i.ethereum.Opts.FetchInterval) * time.Second)
 				continue
 			}
 

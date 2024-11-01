@@ -39,6 +39,9 @@ type ClientOpts struct {
 	Logger                        *slog.Logger
 	Timeout                       time.Duration
 	DefaultStartBlock             uint64
+	MaxBatchSize                  uint64
+	MinBatchSize                  uint64
+	FetchInterval                 uint64
 }
 
 // NewEthereumRPC returns a new EthereumRPC client over HTTP.

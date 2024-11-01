@@ -45,39 +45,79 @@ func main() {
 		Logger.Warn(".env file not found, will attempt to use environment variables from system")
 	}
 
-	llDefaultStartBlock, err := strconv.ParseUint(os.Getenv("LL_DEFAULT_START_BLOCK"), 10, 64)
+	// L1
+
+	l1DefaultStartBlock, err := strconv.ParseUint(os.Getenv("L1_DEFAULT_START_BLOCK"), 10, 64)
 	if err != nil {
-		log.Fatalf("failed to parse LL_DEFAULT_START_BLOCK: %v", err)
+		log.Fatalf("failed to parse L1_DEFAULT_START_BLOCK: %v", err)
 	}
 
-	ethDefaultStartBlock, err := strconv.ParseUint(os.Getenv("ETH_DEFAULT_START_BLOCK"), 10, 64)
+	l1MaxBatchSize, err := strconv.ParseUint(os.Getenv("L1_MAX_BATCH_SIZE"), 10, 64)
 	if err != nil {
-		log.Fatalf("failed to parse ETH_DEFAULT_START_BLOCK: %v", err)
+		log.Fatalf("failed to parse L1_MAX_BATCH_SIZE: %v", err)
 	}
 
-	ethStatusCheckInterval, err := strconv.ParseUint(os.Getenv("ETH_STATUS_CHECK_INTERVAL"), 10, 64)
+	l1MinBatchSize, err := strconv.ParseUint(os.Getenv("L1_MIN_BATCH_SIZE"), 10, 64)
 	if err != nil {
-		log.Fatalf("failed to parse ETH_STATUS_CHECK_INTERVAL: %v", err)
+		log.Fatalf("failed to parse L1_MIN_BATCH_SIZE: %v", err)
+	}
+
+	l1StatusCheckInterval, err := strconv.ParseUint(os.Getenv("L1_STATUS_CHECK_INTERVAL"), 10, 64)
+	if err != nil {
+		log.Fatalf("failed to parse L1_STATUS_CHECK_INTERVAL: %v", err)
+	}
+
+	l1FetchInterval, err := strconv.ParseUint(os.Getenv("L1_FETCH_INTERVAL"), 10, 64)
+	if err != nil {
+		log.Fatalf("failed to parse L1_FETCH_INTERVAL: %v", err)
+	}
+
+	// L2
+
+	l2DefaultStartBlock, err := strconv.ParseUint(os.Getenv("L2_DEFAULT_START_BLOCK"), 10, 64)
+	if err != nil {
+		log.Fatalf("failed to parse L2_DEFAULT_START_BLOCK: %v", err)
+	}
+
+	l2MaxBatchSize, err := strconv.ParseUint(os.Getenv("L2_MAX_BATCH_SIZE"), 10, 64)
+	if err != nil {
+		log.Fatalf("failed to parse L2_MAX_BATCH_SIZE: %v", err)
+	}
+
+	l2MinBatchSize, err := strconv.ParseUint(os.Getenv("L2_MIN_BATCH_SIZE"), 10, 64)
+	if err != nil {
+		log.Fatalf("failed to parse L2_MIN_BATCH_SIZE: %v", err)
+	}
+
+	l2FetchInterval, err := strconv.ParseUint(os.Getenv("L2_FETCH_INTERVAL"), 10, 64)
+	if err != nil {
+		log.Fatalf("failed to parse L2_FETCH_INTERVAL: %v", err)
 	}
 
 	indexer, err := indexer.NewIndexer(indexer.IndexerOpts{
 		Lightlink: &lightlink.ClientOpts{
-			Endpoint:                      os.Getenv("LL_RPC_URL"),
+			Endpoint:                      os.Getenv("L2_RPC_URL"),
 			L2StandardBridgeAddress:       common.HexToAddress(os.Getenv("L2_STANDARD_BRIDGE_ADDRESS")),
 			L2CrossDomainMessengerAddress: common.HexToAddress(os.Getenv("L2_CROSS_DOMAIN_MESSENGER_ADDRESS")),
 			L2ToL1MessagePasserAddress:    common.HexToAddress(os.Getenv("L2_TO_L1_MESSAGE_PASSER_ADDRESS")),
 			Logger:                        Logger.With("component", "lightlink-indexer"),
-			DefaultStartBlock:             llDefaultStartBlock,
+			DefaultStartBlock:             l2DefaultStartBlock,
+			MaxBatchSize:                  l2MaxBatchSize,
+			MinBatchSize:                  l2MinBatchSize,
+			FetchInterval:                 l2FetchInterval,
 		},
 		Ethereum: &ethereum.ClientOpts{
-			Endpoint:                      os.Getenv("ETHEREUM_RPC_URL"),
+			Endpoint:                      os.Getenv("L1_RPC_URL"),
 			L1StandardBridgeAddress:       common.HexToAddress(os.Getenv("L1_STANDARD_BRIDGE_ADDRESS")),
 			L1CrossDomainMessengerAddress: common.HexToAddress(os.Getenv("L1_CROSS_DOMAIN_MESSENGER_ADDRESS")),
-			LightLinkPortalAddress:        common.HexToAddress(os.Getenv("LIGHTLINK_PORTAL_ADDRESS")),
-			CanonicalStateChainAddress:    common.HexToAddress(os.Getenv("CANONICAL_STATE_CHAIN_ADDRESS")),
+			LightLinkPortalAddress:        common.HexToAddress(os.Getenv("L1_LIGHTLINK_PORTAL_ADDRESS")),
+			CanonicalStateChainAddress:    common.HexToAddress(os.Getenv("L1_CANONICAL_STATE_CHAIN_ADDRESS")),
 			Logger:                        Logger.With("component", "ethereum-indexer"),
-			DefaultStartBlock:             ethDefaultStartBlock,
-			StatusCheckInterval:           ethStatusCheckInterval,
+			DefaultStartBlock:             l1DefaultStartBlock,
+			StatusCheckInterval:           l1StatusCheckInterval,
+			MaxBatchSize:                  l1MaxBatchSize,
+			MinBatchSize:                  l1MinBatchSize,
+			FetchInterval:                 l1FetchInterval,
 		},
 		Database: &database.DatabaseOpts{
 			URI:          os.Getenv("DATABASE_URI"),

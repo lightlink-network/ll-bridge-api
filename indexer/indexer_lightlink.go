@@ -13,8 +13,8 @@ import (
 )
 
 func (i *Indexer) indexLightLink(ctx context.Context) error {
-	minBatchSize := uint64(50)
-	maxBatchSize := uint64(2000)
+	minBatchSize := i.lightlink.Opts.MinBatchSize
+	maxBatchSize := i.lightlink.Opts.MaxBatchSize
 	start := i.lightlink.Opts.DefaultStartBlock
 
 	// Get last indexed block
@@ -43,7 +43,7 @@ func (i *Indexer) indexLightLink(ctx context.Context) error {
 					"chainHead", lastBlock,
 					"nextBatchStart", start)
 
-				time.Sleep(time.Second * 10)
+				time.Sleep(time.Duration(i.lightlink.Opts.FetchInterval) * time.Second)
 				continue
 			}
 
