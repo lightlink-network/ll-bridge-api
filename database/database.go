@@ -351,7 +351,7 @@ func (db *Database) GetTransactions(ctx context.Context, filter models.Filter, p
 				bson.D{{Key: "$count", Value: "total"}},
 			}},
 			{Key: "transactions", Value: bson.A{
-				bson.D{{Key: "$sort", Value: bson.D{{Key: "block_time", Value: 1}}}},
+				bson.D{{Key: "$sort", Value: bson.D{{Key: "block_time", Value: -1}}}},
 				bson.D{{Key: "$skip", Value: skip}},
 				bson.D{{Key: "$limit", Value: pageSize}},
 			}},
