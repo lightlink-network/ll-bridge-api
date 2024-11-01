@@ -6,7 +6,7 @@ WORKDIR /app
 ADD . .
 ARG VERSION=dev
 RUN go mod download
-RUN CGO_ENABLED=0 go build -ldflags "-X main.Version=$VERSION" -o ll-bridge-api cli/main.go 
+RUN CGO_ENABLED=0 go build -ldflags "-X main.Version=$VERSION" -o ll-bridge-api cmd/main.go 
 
 ## Final Image
 FROM alpine:3.20.3
