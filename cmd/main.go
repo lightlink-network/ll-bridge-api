@@ -25,11 +25,6 @@ import (
 var Version = "development"
 
 func main() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
-	}
-
 	// create a new logger
 	Logger := slog.New(tint.NewHandler(os.Stderr, nil))
 
@@ -44,6 +39,11 @@ func main() {
 		"Go Version", runtime.Version(),
 		"Operating System", runtime.GOOS,
 		"Architecture", runtime.GOARCH)
+
+	err := godotenv.Load()
+	if err != nil {
+		Logger.Warn(".env file not found, will attempt to use environment variables from system")
+	}
 
 	llDefaultStartBlock, err := strconv.ParseUint(os.Getenv("LL_DEFAULT_START_BLOCK"), 10, 64)
 	if err != nil {
