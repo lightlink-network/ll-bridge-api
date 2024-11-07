@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/lightlink-network/ll-bridge-api/database/models"
 )
 
@@ -36,4 +37,16 @@ func (s *Server) handleTransactionsGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	JSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleTransactionsHashGet(w http.ResponseWriter, r *http.Request) {
+	hash := chi.URLParam(r, "hash")
+
+	transaction, err := s.db.GetTransactionByHash(r.Context(), hash)
+	if err != nil {
+		ERROR(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	JSON(w, http.StatusOK, transaction)
 }

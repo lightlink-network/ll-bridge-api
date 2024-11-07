@@ -54,5 +54,6 @@ func (s *Server) routes() {
 
 		// transactions
 		r.Get("/transactions", s.handleTransactionsGet)
+		r.Get("/transactions/{hash}", s.handleTransactionsHashGet)
 	})
 }

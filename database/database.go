@@ -27,11 +27,24 @@ type DatabaseOpts struct {
 	Logger       *slog.Logger
 }
 
+const (
+	defaultBatchSize = 1000
+	defaultTimeout   = 10 * time.Second
+)
+
 func NewDatabase(opts DatabaseOpts) (*Database, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
 	defer cancel()
 
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(opts.URI))
+	clientOpts := options.Client().
+		ApplyURI(opts.URI).
+		SetMaxPoolSize(100).  // Adjust based on your needs
+		SetMinPoolSize(10).   // Maintain minimum connections
+		SetMaxConnecting(10). // Limit concurrent connection attempts
+		SetServerSelectionTimeout(5 * time.Second).
+		SetRetryWrites(true)
+
+	client, err := mongo.Connect(ctx, clientOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
@@ -304,6 +317,102 @@ func (db *Database) CreateWithdrawalFinalized(ctx context.Context, withdrawal mo
 
 	return result.InsertedID.(primitive.ObjectID).Hex(), nil
 }
+
+func (db *Database) GetTransactionByHash(ctx context.Context, hash string) (models.Transaction, error) {
+	collection := db.client.Database(db.databaseName).Collection("deposits")
+
+	// Pipeline to transform and combine deposits and withdrawals
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: bson.D{{Key: "tx_hash", Value: hash}}}},
+		{{Key: "$addFields", Value: bson.D{
+			{Key: "type", Value: "deposit"},
+			{Key: "withdrawal_hash", Value: nil},
+			{Key: "prove_tx", Value: nil},
+			{Key: "finalize_tx", Value: nil},
+		}}},
+		{{Key: "$unionWith", Value: bson.D{
+			{Key: "coll", Value: "withdrawals"},
+			{Key: "pipeline", Value: mongo.Pipeline{
+				{{Key: "$match", Value: bson.D{{Key: "tx_hash", Value: hash}}}},
+				{{Key: "$lookup", Value: bson.D{
+					{Key: "from", Value: "withdrawals_proven"},
+					{Key: "localField", Value: "withdrawal_hash"},
+					{Key: "foreignField", Value: "withdrawal_hash"},
+					{Key: "as", Value: "prove_tx"},
+				}}},
+				{{Key: "$lookup", Value: bson.D{
+					{Key: "from", Value: "withdrawals_finalized"},
+					{Key: "localField", Value: "withdrawal_hash"},
+					{Key: "foreignField", Value: "withdrawal_hash"},
+					{Key: "as", Value: "finalize_tx"},
+				}}},
+				{{Key: "$unwind", Value: bson.D{
+					{Key: "path", Value: "$prove_tx"},
+					{Key: "preserveNullAndEmptyArrays", Value: true},
+				}}},
+				{{Key: "$unwind", Value: bson.D{
+					{Key: "path", Value: "$finalize_tx"},
+					{Key: "preserveNullAndEmptyArrays", Value: true},
+				}}},
+				{{Key: "$addFields", Value: bson.D{{Key: "type", Value: "withdrawal"}}}},
+			}},
+		}}},
+	}
+
+	cursor, err := collection.Aggregate(ctx, pipeline)
+	if err != nil {
+		return models.Transaction{}, fmt.Errorf("failed to execute transaction aggregation: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var results []bson.M
+	if err := cursor.All(ctx, &results); err != nil {
+		return models.Transaction{}, fmt.Errorf("failed to decode transaction: %w", err)
+	}
+
+	if len(results) == 0 {
+		return models.Transaction{}, mongo.ErrNoDocuments
+	}
+
+	txMap := results[0]
+	transaction := models.Transaction{
+		Type:        txMap["type"].(string),
+		ERC20:       txMap["erc20"].(bool),
+		From:        txMap["from"].(string),
+		To:          txMap["to"].(string),
+		Value:       txMap["value"].(string),
+		L1Token:     txMap["l1_token"].(string),
+		L2Token:     txMap["l2_token"].(string),
+		Message:     txMap["message"].(string),
+		MessageHash: txMap["message_hash"].(string),
+		TxHash:      txMap["tx_hash"].(string),
+		BlockNumber: uint64(txMap["block_number"].(int64)),
+		BlockHash:   txMap["block_hash"].(string),
+		BlockTime:   uint64(txMap["block_time"].(int64)),
+		Status:      txMap["status"].(string),
+	}
+
+	if txMap["type"].(string) == "withdrawal" {
+		transaction.WithdrawalHash = txMap["withdrawal_hash"].(string)
+		if txMap["prove_tx"] != nil {
+			transaction.ProvenTx = &models.WithdrawalProven{}
+			raw, _ := bson.Marshal(txMap["prove_tx"])
+			bson.Unmarshal(raw, transaction.ProvenTx)
+		}
+		if txMap["finalize_tx"] != nil {
+			transaction.FinalizeTx = &models.WithdrawalFinalized{}
+			raw, _ := bson.Marshal(txMap["finalize_tx"])
+			bson.Unmarshal(raw, transaction.FinalizeTx)
+		}
+	} else {
+		if l1TxHash, ok := txMap["l1_tx_hash"]; ok {
+			transaction.L1TxHash = l1TxHash.(string)
+		}
+	}
+
+	return transaction, nil
+}
+
 func (db *Database) GetTransactions(ctx context.Context, filter models.Filter, page, pageSize int64) (*models.PaginatedResult, error) {
 	collection := db.client.Database(db.databaseName).Collection("deposits")
 
@@ -313,6 +422,9 @@ func (db *Database) GetTransactions(ctx context.Context, filter models.Filter, p
 	// Pipeline to transform and combine deposits and withdrawals
 	pipeline := mongo.Pipeline{
 		{{Key: "$match", Value: mongoFilter}},
+		{{Key: "$sort", Value: bson.D{{Key: "block_time", Value: -1}}}}, // Move sort before union
+		{{Key: "$skip", Value: skip}},
+		{{Key: "$limit", Value: pageSize}},
 		{{Key: "$addFields", Value: bson.D{
 			{Key: "type", Value: "deposit"},
 			{Key: "withdrawal_hash", Value: nil},
@@ -358,8 +470,14 @@ func (db *Database) GetTransactions(ctx context.Context, filter models.Filter, p
 		}}},
 	}
 
+	// Add read preference for better performance
+	opts := options.Aggregate().
+		SetMaxTime(30 * time.Second).
+		SetBatchSize(1000).
+		SetAllowDiskUse(true)
+
 	var result []bson.M
-	cursor, err := collection.Aggregate(ctx, pipeline)
+	cursor, err := collection.Aggregate(ctx, pipeline, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute transaction aggregation: %w", err)
 	}
@@ -472,9 +590,11 @@ func (db *Database) UpdateWithdrawalsToReadyToProve(ctx context.Context, l2Block
 func (db *Database) GetWithdrawalsByStatus(ctx context.Context, status string) ([]models.Withdrawal, error) {
 	collection := db.client.Database(db.databaseName).Collection("withdrawals")
 
-	filter := bson.D{{Key: "status", Value: status}}
+	opts := options.Find().
+		SetHint(bson.D{{Key: "status", Value: 1}}).
+		SetBatchSize(1000)
 
-	cursor, err := collection.Find(ctx, filter)
+	cursor, err := collection.Find(ctx, bson.D{{Key: "status", Value: status}}, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get withdrawals by status: %w", err)
 	}
