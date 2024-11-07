@@ -13,7 +13,7 @@ type Transaction struct {
 	MessageHash    string               `json:"message_hash,omitempty" bson:"message_hash,omitempty"`
 	WithdrawalHash string               `json:"withdrawal_hash,omitempty" bson:"withdrawal_hash,omitempty"`
 	TxHash         string               `json:"tx_hash" bson:"tx_hash"`
-	L1TxHash       string               `json:"l2_tx_hash,omitempty" bson:"l1_tx_hash,omitempty"`
+	L2TxHash       string               `json:"l2_tx_hash,omitempty" bson:"l2_tx_hash,omitempty"`
 	BlockNumber    uint64               `json:"block_number" bson:"block_number"`
 	BlockHash      string               `json:"block_hash" bson:"block_hash"`
 	BlockTime      uint64               `json:"block_time" bson:"block_time"`

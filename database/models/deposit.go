@@ -11,7 +11,7 @@ type Deposit struct {
 	Message     string `json:"message" bson:"message"`
 	MessageHash string `json:"message_hash" bson:"message_hash"`
 	TxHash      string `json:"tx_hash" bson:"tx_hash"`
-	L1TxHash    string `json:"l1_tx_hash" bson:"l1_tx_hash"`
+	L2TxHash    string `json:"l2_tx_hash" bson:"l2_tx_hash"`
 	BlockNumber uint64 `json:"block_number" bson:"block_number"`
 	BlockHash   string `json:"block_hash" bson:"block_hash"`
 	BlockTime   uint64 `json:"block_time" bson:"block_time"`

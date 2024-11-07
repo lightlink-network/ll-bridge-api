@@ -127,7 +127,7 @@ func (db *Database) UpdateDepositStatus(ctx context.Context, messageHash string,
 			Key:   "status",
 			Value: status,
 		}, {
-			Key:   "l1_tx_hash",
+			Key:   "l2_tx_hash",
 			Value: txHash,
 		}},
 	}}
@@ -405,8 +405,8 @@ func (db *Database) GetTransactionByHash(ctx context.Context, hash string) (mode
 			bson.Unmarshal(raw, transaction.FinalizeTx)
 		}
 	} else {
-		if l1TxHash, ok := txMap["l1_tx_hash"]; ok {
-			transaction.L1TxHash = l1TxHash.(string)
+		if l2TxHash, ok := txMap["l2_tx_hash"]; ok {
+			transaction.L2TxHash = l2TxHash.(string)
 		}
 	}
 
@@ -539,8 +539,8 @@ func (db *Database) GetTransactions(ctx context.Context, filter models.Filter, p
 				bson.Unmarshal(raw, transaction.FinalizeTx)
 			}
 		} else {
-			if l1TxHash, ok := txMap["l1_tx_hash"]; ok {
-				transaction.L1TxHash = l1TxHash.(string)
+			if l2TxHash, ok := txMap["l2_tx_hash"]; ok {
+				transaction.L2TxHash = l2TxHash.(string)
 			}
 		}
 
