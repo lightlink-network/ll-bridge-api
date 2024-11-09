@@ -99,7 +99,7 @@ func (i *Indexer) indexEthereum(ctx context.Context) error {
 }
 
 func (i *Indexer) indexL1Deposits(startBlock uint64, endBlock uint64) error {
-	deposits := make([]models.Deposit, 0)
+	deposits := make([]models.Transaction, 0)
 
 	opts := bind.FilterOpts{
 		Start: startBlock,
@@ -115,7 +115,7 @@ func (i *Indexer) indexL1Deposits(startBlock uint64, endBlock uint64) error {
 	for ethIter.Next() {
 		log := ethIter.Event
 
-		message, err := i.txToCrossChainMessageV1(log.Raw.TxHash)
+		message, gasUsed, err := i.txToCrossChainMessageV1(log.Raw.TxHash)
 		if err != nil {
 			return fmt.Errorf("failed to convert tx to cross chain message: %w", err)
 		}
@@ -128,7 +128,7 @@ func (i *Indexer) indexL1Deposits(startBlock uint64, endBlock uint64) error {
 			return fmt.Errorf("failed to get block: %w", err)
 		}
 
-		deposits = append(deposits, models.Deposit{
+		deposits = append(deposits, models.Transaction{
 			Type:        "deposit",
 			ERC20:       false,
 			From:        log.From.Hex(),
@@ -140,7 +140,8 @@ func (i *Indexer) indexL1Deposits(startBlock uint64, endBlock uint64) error {
 			BlockNumber: log.Raw.BlockNumber,
 			BlockHash:   log.Raw.BlockHash.Hex(),
 			BlockTime:   block.Time(),
-			Status:      string(types.ReadyForRelay),
+			GasUsed:     *gasUsed,
+			Status:      string(types.UnconfirmedL1ToL2Message),
 		})
 	}
 
@@ -153,7 +154,7 @@ func (i *Indexer) indexL1Deposits(startBlock uint64, endBlock uint64) error {
 	for erc20Iter.Next() {
 		log := erc20Iter.Event
 
-		message, err := i.txToCrossChainMessageV1(log.Raw.TxHash)
+		message, gasUsed, err := i.txToCrossChainMessageV1(log.Raw.TxHash)
 		if err != nil {
 			return fmt.Errorf("failed to convert tx to cross chain message: %w", err)
 		}
@@ -166,7 +167,7 @@ func (i *Indexer) indexL1Deposits(startBlock uint64, endBlock uint64) error {
 			return fmt.Errorf("failed to get block: %w", err)
 		}
 
-		deposits = append(deposits, models.Deposit{
+		deposits = append(deposits, models.Transaction{
 			Type:        "deposit",
 			ERC20:       true,
 			From:        log.From.Hex(),
@@ -180,12 +181,13 @@ func (i *Indexer) indexL1Deposits(startBlock uint64, endBlock uint64) error {
 			BlockNumber: log.Raw.BlockNumber,
 			BlockHash:   log.Raw.BlockHash.Hex(),
 			BlockTime:   block.Time(),
-			Status:      string(types.ReadyForRelay),
+			GasUsed:     *gasUsed,
+			Status:      string(types.UnconfirmedL1ToL2Message),
 		})
 	}
 
 	// Batch insert all deposits
-	if err := i.database.BatchCreateDeposits(context.Background(), deposits); err != nil {
+	if err := i.database.BatchCreateTransactions(context.Background(), deposits); err != nil {
 		return fmt.Errorf("failed to batch create deposits: %w", err)
 	}
 
@@ -208,7 +210,7 @@ func (i *Indexer) indexL1FilterWithdrawalProven(startBlock uint64, endBlock uint
 		i.logger.Info("withdrawal proven", "withdrawalHash", common.Hash(log.WithdrawalHash).Hex())
 
 		// if a withdrawal exists with a status of ReadyToProve, update its status to InChallengePeriod, if it doesnt exit dont error
-		if err := i.database.UpdateWithdrawalStatusByWithdrawalHash(context.Background(), common.Hash(log.WithdrawalHash).Hex(), string(types.InChallengePeriod)); err != nil {
+		if err := i.database.UpdateTransactionStatusByWithdrawalHash(context.Background(), common.Hash(log.WithdrawalHash).Hex(), string(types.InChallengePeriod)); err != nil {
 			if !errors.Is(err, mongo.ErrNoDocuments) {
 				return fmt.Errorf("failed to update withdrawal status: %w", err)
 			}
@@ -220,13 +222,20 @@ func (i *Indexer) indexL1FilterWithdrawalProven(startBlock uint64, endBlock uint
 			return fmt.Errorf("failed to get proven withdrawals: %w", err)
 		}
 
+		// get gas used from tx receipt
+		receipt, err := i.ethereum.TransactionReceipt(context.Background(), log.Raw.TxHash)
+		if err != nil {
+			return fmt.Errorf("failed to get transaction receipt: %w", err)
+		}
+
 		// Create withdrawal proven record
-		if _, err := i.database.CreateWithdrawalProven(context.Background(), models.WithdrawalProven{
+		if _, err := i.database.CreateTransactionProven(context.Background(), models.TransactionProven{
 			WithdrawalHash: common.Hash(log.WithdrawalHash).Hex(),
 			TxHash:         log.Raw.TxHash.Hex(),
 			BlockNumber:    log.Raw.BlockNumber,
 			Timestamp:      outputRoot.Timestamp.Uint64(),
 			L2OutputIndex:  outputRoot.L2OutputIndex.Uint64(),
+			GasUsed:        receipt.GasUsed,
 		}); err != nil {
 			return fmt.Errorf("failed to create withdrawal proven: %w", err)
 		}
@@ -251,7 +260,7 @@ func (i *Indexer) indexL1FilterWithdrawalFinalized(startBlock uint64, endBlock u
 		i.logger.Info("withdrawal finalized", "withdrawalHash", common.Hash(log.WithdrawalHash).Hex())
 
 		// if a withdrawal exists with a status of ReadyForRelay, update its status to Relayed, if it doesnt exit dont error
-		if err := i.database.UpdateWithdrawalStatusByWithdrawalHash(context.Background(), common.Hash(log.WithdrawalHash).Hex(), string(types.Relayed)); err != nil {
+		if err := i.database.UpdateTransactionStatusByWithdrawalHash(context.Background(), common.Hash(log.WithdrawalHash).Hex(), string(types.Relayed)); err != nil {
 			if !errors.Is(err, mongo.ErrNoDocuments) {
 				return fmt.Errorf("failed to update withdrawal status: %w", err)
 			}
@@ -263,12 +272,19 @@ func (i *Indexer) indexL1FilterWithdrawalFinalized(startBlock uint64, endBlock u
 			return fmt.Errorf("failed to get block: %w", err)
 		}
 
+		// get gas used from tx receipt
+		receipt, err := i.ethereum.TransactionReceipt(context.Background(), log.Raw.TxHash)
+		if err != nil {
+			return fmt.Errorf("failed to get transaction receipt: %w", err)
+		}
+
 		// Create withdrawal finalized
-		if _, err := i.database.CreateWithdrawalFinalized(context.Background(), models.WithdrawalFinalized{
+		if _, err := i.database.CreateTransactionFinalized(context.Background(), models.TransactionFinalized{
 			WithdrawalHash: common.Hash(log.WithdrawalHash).Hex(),
 			TxHash:         log.Raw.TxHash.Hex(),
 			BlockNumber:    log.Raw.BlockNumber,
 			Timestamp:      block.Time(),
+			GasUsed:        receipt.GasUsed,
 		}); err != nil {
 			return fmt.Errorf("failed to create withdrawal finalized: %w", err)
 		}
@@ -301,7 +317,7 @@ func (i *Indexer) indexL2OutputProposed(startBlock uint64, endBlock uint64) erro
 		}
 
 		// get all proven withdrawals that correspond to the withdrawals with a status of InChallengePeriod
-		provenWithdrawals, err := i.database.GetWithdrawalsProvenByStatus(context.Background(), string(types.InChallengePeriod))
+		provenWithdrawals, err := i.database.GetTransactionsProvenByStatus(context.Background(), string(types.InChallengePeriod))
 		if err != nil {
 			return fmt.Errorf("failed to get proven withdrawals: %w", err)
 		}
@@ -314,7 +330,7 @@ func (i *Indexer) indexL2OutputProposed(startBlock uint64, endBlock uint64) erro
 			}
 
 			if isFinalized {
-				if err := i.database.UpdateWithdrawalStatusByWithdrawalHash(context.Background(), withdrawal.WithdrawalHash, string(types.ReadyForRelay)); err != nil {
+				if err := i.database.UpdateTransactionStatusByWithdrawalHash(context.Background(), withdrawal.WithdrawalHash, string(types.ReadyForRelay)); err != nil {
 					return fmt.Errorf("failed to update withdrawal status: %w", err)
 				}
 			}
@@ -335,14 +351,14 @@ func (i *Indexer) CheckWithdrawalProvenStatus(ctx context.Context) error {
 			return nil
 		default:
 			// Get all withdrawals with ReadyToProve status
-			withdrawals, err := i.database.GetWithdrawalsByStatus(ctx, string(types.ReadyToProve))
+			withdrawals, err := i.database.GetTransactionsByStatus(ctx, string(types.ReadyToProve), "withdrawal")
 			if err != nil {
 				return fmt.Errorf("failed to get withdrawals with ReadyToProve status: %w", err)
 			}
 
 			for _, withdrawal := range withdrawals {
 				// Get withdrawal proven record for this withdrawal
-				proven, err := i.database.GetWithdrawalProvenByHash(ctx, withdrawal.WithdrawalHash)
+				proven, err := i.database.GetTransactionProvenByHash(ctx, withdrawal.WithdrawalHash)
 				if err != nil {
 					// If error is not "not found", return the error
 					if !errors.Is(err, mongo.ErrNoDocuments) {
@@ -354,7 +370,7 @@ func (i *Indexer) CheckWithdrawalProvenStatus(ctx context.Context) error {
 
 				// If we found a matching withdrawals_proven record, update the withdrawal status
 				if proven.WithdrawalHash != "" {
-					if err := i.database.UpdateWithdrawalStatusByWithdrawalHash(ctx, withdrawal.WithdrawalHash, string(types.InChallengePeriod)); err != nil {
+					if err := i.database.UpdateTransactionStatusByWithdrawalHash(ctx, withdrawal.WithdrawalHash, string(types.InChallengePeriod)); err != nil {
 						return fmt.Errorf("failed to update withdrawal status: %w", err)
 					}
 					i.logger.Info("updated withdrawal status to InChallengePeriod",
@@ -380,14 +396,14 @@ func (i *Indexer) CheckWithdrawalFinalizedStatus(ctx context.Context) error {
 			return nil
 		default:
 			// Get all withdrawals with ReadyForRelay status
-			withdrawals, err := i.database.GetWithdrawalsByStatus(ctx, string(types.ReadyForRelay))
+			withdrawals, err := i.database.GetTransactionsByStatus(ctx, string(types.ReadyForRelay), "withdrawal")
 			if err != nil {
 				return fmt.Errorf("failed to get withdrawals with ReadyForRelay status: %w", err)
 			}
 
 			for _, withdrawal := range withdrawals {
 				// Get withdrawal finalized record for this withdrawal
-				finalized, err := i.database.GetWithdrawalFinalizedByHash(ctx, withdrawal.WithdrawalHash)
+				finalized, err := i.database.GetTransactionFinalizedByHash(ctx, withdrawal.WithdrawalHash)
 				if err != nil {
 					// If error is not "not found", return the error
 					if !errors.Is(err, mongo.ErrNoDocuments) {
@@ -399,7 +415,7 @@ func (i *Indexer) CheckWithdrawalFinalizedStatus(ctx context.Context) error {
 
 				// If we found a matching withdrawals_finalized record, update the withdrawal status
 				if finalized.WithdrawalHash != "" {
-					if err := i.database.UpdateWithdrawalStatusByWithdrawalHash(ctx, withdrawal.WithdrawalHash, string(types.Relayed)); err != nil {
+					if err := i.database.UpdateTransactionStatusByWithdrawalHash(ctx, withdrawal.WithdrawalHash, string(types.Relayed)); err != nil {
 						return fmt.Errorf("failed to update withdrawal status: %w", err)
 					}
 					i.logger.Info("updated withdrawal status to Relayed",

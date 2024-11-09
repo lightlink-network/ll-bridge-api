@@ -94,6 +94,8 @@ func main() {
 		log.Fatalf("failed to parse L2_FETCH_INTERVAL: %v", err)
 	}
 
+	Logger.Info("Database", "name", os.Getenv("DATABASE_NAME"))
+
 	indexer, err := indexer.NewIndexer(indexer.IndexerOpts{
 		Lightlink: &lightlink.ClientOpts{
 			Endpoint:                      os.Getenv("L2_RPC_URL"),

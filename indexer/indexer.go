@@ -116,7 +116,7 @@ type CrossChainMessageV1 struct {
 	Value        *big.Int `json:"value,omitempty"`
 }
 
-func (i *Indexer) txToCrossChainMessageV1(txHash common.Hash) (*CrossChainMessageV1, error) {
+func (i *Indexer) txToCrossChainMessageV1(txHash common.Hash) (*CrossChainMessageV1, *uint64, error) {
 	var receipt *types.Receipt
 	var err error
 
@@ -124,14 +124,14 @@ func (i *Indexer) txToCrossChainMessageV1(txHash common.Hash) (*CrossChainMessag
 	if err != nil {
 		receipt, err = i.lightlink.TransactionReceipt(context.Background(), txHash)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get transaction receipt on ethereum or lightlink: %w", err)
+			return nil, nil, fmt.Errorf("failed to get transaction receipt on ethereum or lightlink: %w", err)
 		}
 	}
 
 	// parse data
 	contractAbi, err := abi.JSON(strings.NewReader(string(L2CrossDomainMessenger.L2CrossDomainMessengerABI)))
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse contract abi: %w", err)
+		return nil, nil, fmt.Errorf("failed to parse contract abi: %w", err)
 	}
 
 	var message CrossChainMessageV1
@@ -146,7 +146,7 @@ func (i *Indexer) txToCrossChainMessageV1(txHash common.Hash) (*CrossChainMessag
 
 				err := contractAbi.UnpackIntoInterface(&message, "SentMessage", log.Data)
 				if err != nil {
-					return nil, fmt.Errorf("failed to unpack SentMessage: %w", err)
+					return nil, nil, fmt.Errorf("failed to unpack SentMessage: %w", err)
 				}
 			}
 
@@ -154,13 +154,13 @@ func (i *Indexer) txToCrossChainMessageV1(txHash common.Hash) (*CrossChainMessag
 			if log.Topics[0] == SentMessageExtension1ABIHash {
 				err := contractAbi.UnpackIntoInterface(&message, "SentMessageExtension1", log.Data)
 				if err != nil {
-					return nil, fmt.Errorf("failed to unpack SentMessageExtension1: %w", err)
+					return nil, nil, fmt.Errorf("failed to unpack SentMessageExtension1: %w", err)
 				}
 			}
 		}
 	}
 
-	return &message, nil
+	return &message, &receipt.GasUsed, nil
 }
 
 func (i *Indexer) getWithdrawalHash(txHash common.Hash) (*common.Hash, error) {

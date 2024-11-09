@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/lightlink-network/ll-bridge-api/database/models"
 	"github.com/lightlink-network/ll-bridge-api/types"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 func (i *Indexer) indexLightLink(ctx context.Context) error {
@@ -84,7 +85,7 @@ func (i *Indexer) indexLightLink(ctx context.Context) error {
 }
 
 func (i *Indexer) indexL2Withdrawals(startBlock uint64, endBlock uint64) error {
-	withdrawals := make([]models.Withdrawal, 0)
+	withdrawals := make([]models.Transaction, 0)
 
 	opts := bind.FilterOpts{
 		Start: startBlock,
@@ -100,7 +101,7 @@ func (i *Indexer) indexL2Withdrawals(startBlock uint64, endBlock uint64) error {
 	for ethIter.Next() {
 		log := ethIter.Event
 
-		message, err := i.txToCrossChainMessageV1(log.Raw.TxHash)
+		message, gasUsed, err := i.txToCrossChainMessageV1(log.Raw.TxHash)
 		if err != nil {
 			return fmt.Errorf("failed to convert tx to cross chain message: %w", err)
 		}
@@ -120,7 +121,7 @@ func (i *Indexer) indexL2Withdrawals(startBlock uint64, endBlock uint64) error {
 			return fmt.Errorf("failed to hash withdrawal: %w", err)
 		}
 
-		withdrawals = append(withdrawals, models.Withdrawal{
+		withdrawals = append(withdrawals, models.Transaction{
 			Type:           "withdrawal",
 			ERC20:          false,
 			From:           log.From.Hex(),
@@ -134,6 +135,7 @@ func (i *Indexer) indexL2Withdrawals(startBlock uint64, endBlock uint64) error {
 			BlockTime:      blockTime,
 			WithdrawalHash: hash.Hex(),
 			Status:         string(types.StateRootNotPublished),
+			GasUsed:        *gasUsed,
 		})
 
 		i.logger.Info("withdrawal created", "tx_hash", log.Raw.TxHash.Hex())
@@ -147,7 +149,7 @@ func (i *Indexer) indexL2Withdrawals(startBlock uint64, endBlock uint64) error {
 
 	for erc20Iter.Next() {
 		log := erc20Iter.Event
-		message, err := i.txToCrossChainMessageV1(log.Raw.TxHash)
+		message, gasUsed, err := i.txToCrossChainMessageV1(log.Raw.TxHash)
 		if err != nil {
 			return fmt.Errorf("failed to convert tx to cross chain message: %w", err)
 		}
@@ -165,7 +167,7 @@ func (i *Indexer) indexL2Withdrawals(startBlock uint64, endBlock uint64) error {
 			return fmt.Errorf("failed to hash withdrawal: %w", err)
 		}
 
-		withdrawals = append(withdrawals, models.Withdrawal{
+		withdrawals = append(withdrawals, models.Transaction{
 			Type:           "withdrawal",
 			ERC20:          true,
 			From:           log.From.Hex(),
@@ -181,19 +183,21 @@ func (i *Indexer) indexL2Withdrawals(startBlock uint64, endBlock uint64) error {
 			BlockTime:      blockTime,
 			WithdrawalHash: hash.Hex(),
 			Status:         string(types.StateRootNotPublished),
+			GasUsed:        *gasUsed,
 		})
 
 		i.logger.Info("withdrawal created", "tx_hash", log.Raw.TxHash.Hex())
 	}
 
 	// Batch insert all withdrawals
-	if err := i.database.BatchCreateWithdrawals(context.Background(), withdrawals); err != nil {
+	if err := i.database.BatchCreateTransactions(context.Background(), withdrawals); err != nil {
 		return fmt.Errorf("failed to batch create withdrawals: %w", err)
 	}
 
 	return nil
 }
 
+// Scans L2CrossDomainMessenger for relayed messages and updates the corresponding deposit status to RELAYED
 func (i *Indexer) indexL2RelayedMessages(startBlock uint64, endBlock uint64) error {
 	opts := bind.FilterOpts{
 		Start: startBlock,
@@ -206,11 +210,15 @@ func (i *Indexer) indexL2RelayedMessages(startBlock uint64, endBlock uint64) err
 	}
 
 	for msgIter.Next() {
-		log := msgIter.Event
-		i.logger.Info("L2RelayedMessage", "MsgHash", common.Hash(log.MsgHash).Hex())
-
-		// Update deposit status to RELAYED using proper MongoDB update syntax
-		if err := i.database.UpdateDepositStatus(context.Background(), common.Hash(log.MsgHash).Hex(), "RELAYED", log.Raw.TxHash.Hex()); err != nil {
+		// Update deposit status to RELAYED
+		if err := i.database.UpdateTransactionByMessageHash(
+			context.Background(),
+			common.Hash(msgIter.Event.MsgHash),
+			bson.D{
+				{Key: "l2_tx_hash", Value: msgIter.Event.Raw.TxHash.Hex()},
+				{Key: "status", Value: string(types.Relayed)},
+			},
+		); err != nil {
 			return fmt.Errorf("failed to update deposit status: %w", err)
 		}
 	}

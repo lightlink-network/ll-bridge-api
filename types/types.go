@@ -4,6 +4,10 @@ package types
 type MessageStatus string
 
 const (
+
+	// UnconfirmedL1ToL2Message - Message is an L1 to L2 message and has not been confirmed
+	UnconfirmedL1ToL2Message MessageStatus = "UNCONFIRMED_L1_TO_L2_MESSAGE"
+
 	// StateRootNotPublished - Message is an L2 to L1 message and no state root has been published yet
 	StateRootNotPublished MessageStatus = "STATE_ROOT_NOT_PUBLISHED"
 
