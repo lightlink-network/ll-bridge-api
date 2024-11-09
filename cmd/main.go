@@ -25,25 +25,26 @@ import (
 var Version = "development"
 
 func main() {
-	// create a new logger
-	Logger := slog.New(tint.NewHandler(os.Stderr, nil))
+	err := godotenv.Load()
+	if err != nil {
+		fmt.Println(".env file not found, will attempt to use environment variables from system")
+	}
 
-	// set global logger with custom options
-	slog.SetDefault(slog.New(
-		tint.NewHandler(os.Stderr, &tint.Options{
-			Level: slog.LevelDebug,
-		}),
-	))
+	// Configure logger
+	var handler slog.Handler
+	if useJSON, _ := strconv.ParseBool(os.Getenv("LOG_JSON")); useJSON {
+		handler = slog.NewJSONHandler(os.Stdout, nil)
+	} else {
+		handler = tint.NewHandler(os.Stdout, nil)
+	}
+
+	Logger := slog.New(handler)
+	slog.SetDefault(Logger)
 
 	Logger.Info("Starting ll-bridge-api ("+Version+")",
 		"Go Version", runtime.Version(),
 		"Operating System", runtime.GOOS,
 		"Architecture", runtime.GOARCH)
-
-	err := godotenv.Load()
-	if err != nil {
-		Logger.Warn(".env file not found, will attempt to use environment variables from system")
-	}
 
 	// L1
 
