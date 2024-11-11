@@ -11,11 +11,12 @@ type Transaction struct {
 	Status string `json:"status" bson:"status"`
 
 	// Init tx metadata
-	TxHash      string `json:"tx_hash" bson:"tx_hash"`
-	BlockNumber uint64 `json:"block_number" bson:"block_number"`
-	BlockHash   string `json:"block_hash" bson:"block_hash"`
-	BlockTime   uint64 `json:"block_time" bson:"block_time"`
-	GasUsed     uint64 `json:"gas_used" bson:"gas_used"`
+	TxHash            string `json:"tx_hash" bson:"tx_hash"`
+	BlockNumber       uint64 `json:"block_number" bson:"block_number"`
+	BlockHash         string `json:"block_hash" bson:"block_hash"`
+	BlockTime         uint64 `json:"block_time" bson:"block_time"`
+	GasUsed           uint64 `json:"gas_used" bson:"gas_used"`
+	EffectiveGasPrice uint64 `json:"effective_gas_price" bson:"effective_gas_price"`
 
 	// Init tx
 	From        string `json:"from" bson:"from"`

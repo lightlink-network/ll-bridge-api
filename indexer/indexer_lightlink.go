@@ -101,7 +101,7 @@ func (i *Indexer) indexL2Withdrawals(startBlock uint64, endBlock uint64) error {
 	for ethIter.Next() {
 		log := ethIter.Event
 
-		message, gasUsed, err := i.txToCrossChainMessageV1(log.Raw.TxHash)
+		message, gasUsed, effectiveGasPrice, err := i.txToCrossChainMessageV1(log.Raw.TxHash)
 		if err != nil {
 			return fmt.Errorf("failed to convert tx to cross chain message: %w", err)
 		}
@@ -122,20 +122,21 @@ func (i *Indexer) indexL2Withdrawals(startBlock uint64, endBlock uint64) error {
 		}
 
 		withdrawals = append(withdrawals, models.Transaction{
-			Type:           "withdrawal",
-			ERC20:          false,
-			From:           log.From.Hex(),
-			To:             log.To.Hex(),
-			Value:          log.Amount.String(),
-			Message:        hex.EncodeToString(message.Message),
-			MessageHash:    messageHash.Hex(),
-			TxHash:         log.Raw.TxHash.Hex(),
-			BlockNumber:    log.Raw.BlockNumber,
-			BlockHash:      log.Raw.BlockHash.Hex(),
-			BlockTime:      blockTime,
-			WithdrawalHash: hash.Hex(),
-			Status:         string(types.StateRootNotPublished),
-			GasUsed:        *gasUsed,
+			Type:              "withdrawal",
+			ERC20:             false,
+			From:              log.From.Hex(),
+			To:                log.To.Hex(),
+			Value:             log.Amount.String(),
+			Message:           hex.EncodeToString(message.Message),
+			MessageHash:       messageHash.Hex(),
+			TxHash:            log.Raw.TxHash.Hex(),
+			BlockNumber:       log.Raw.BlockNumber,
+			BlockHash:         log.Raw.BlockHash.Hex(),
+			BlockTime:         blockTime,
+			WithdrawalHash:    hash.Hex(),
+			Status:            string(types.StateRootNotPublished),
+			GasUsed:           *gasUsed,
+			EffectiveGasPrice: *effectiveGasPrice,
 		})
 
 		i.logger.Info("withdrawal created", "tx_hash", log.Raw.TxHash.Hex())
@@ -149,7 +150,7 @@ func (i *Indexer) indexL2Withdrawals(startBlock uint64, endBlock uint64) error {
 
 	for erc20Iter.Next() {
 		log := erc20Iter.Event
-		message, gasUsed, err := i.txToCrossChainMessageV1(log.Raw.TxHash)
+		message, gasUsed, effectiveGasPrice, err := i.txToCrossChainMessageV1(log.Raw.TxHash)
 		if err != nil {
 			return fmt.Errorf("failed to convert tx to cross chain message: %w", err)
 		}
@@ -168,22 +169,23 @@ func (i *Indexer) indexL2Withdrawals(startBlock uint64, endBlock uint64) error {
 		}
 
 		withdrawals = append(withdrawals, models.Transaction{
-			Type:           "withdrawal",
-			ERC20:          true,
-			From:           log.From.Hex(),
-			To:             log.To.Hex(),
-			Value:          log.Amount.String(),
-			L1Token:        log.RemoteToken.Hex(),
-			L2Token:        log.LocalToken.Hex(),
-			Message:        hex.EncodeToString(message.Message),
-			MessageHash:    messageHash.Hex(),
-			TxHash:         log.Raw.TxHash.Hex(),
-			BlockNumber:    log.Raw.BlockNumber,
-			BlockHash:      log.Raw.BlockHash.Hex(),
-			BlockTime:      blockTime,
-			WithdrawalHash: hash.Hex(),
-			Status:         string(types.StateRootNotPublished),
-			GasUsed:        *gasUsed,
+			Type:              "withdrawal",
+			ERC20:             true,
+			From:              log.From.Hex(),
+			To:                log.To.Hex(),
+			Value:             log.Amount.String(),
+			L1Token:           log.RemoteToken.Hex(),
+			L2Token:           log.LocalToken.Hex(),
+			Message:           hex.EncodeToString(message.Message),
+			MessageHash:       messageHash.Hex(),
+			TxHash:            log.Raw.TxHash.Hex(),
+			BlockNumber:       log.Raw.BlockNumber,
+			BlockHash:         log.Raw.BlockHash.Hex(),
+			BlockTime:         blockTime,
+			WithdrawalHash:    hash.Hex(),
+			Status:            string(types.StateRootNotPublished),
+			GasUsed:           *gasUsed,
+			EffectiveGasPrice: *effectiveGasPrice,
 		})
 
 		i.logger.Info("withdrawal created", "tx_hash", log.Raw.TxHash.Hex())

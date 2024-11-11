@@ -115,7 +115,7 @@ func (i *Indexer) indexL1Deposits(startBlock uint64, endBlock uint64) error {
 	for ethIter.Next() {
 		log := ethIter.Event
 
-		message, gasUsed, err := i.txToCrossChainMessageV1(log.Raw.TxHash)
+		message, gasUsed, effectiveGasPrice, err := i.txToCrossChainMessageV1(log.Raw.TxHash)
 		if err != nil {
 			return fmt.Errorf("failed to convert tx to cross chain message: %w", err)
 		}
@@ -129,19 +129,20 @@ func (i *Indexer) indexL1Deposits(startBlock uint64, endBlock uint64) error {
 		}
 
 		deposits = append(deposits, models.Transaction{
-			Type:        "deposit",
-			ERC20:       false,
-			From:        log.From.Hex(),
-			To:          log.To.Hex(),
-			Value:       log.Amount.String(),
-			Message:     hex.EncodeToString(message.Message),
-			MessageHash: messageHash.Hex(),
-			TxHash:      log.Raw.TxHash.Hex(),
-			BlockNumber: log.Raw.BlockNumber,
-			BlockHash:   log.Raw.BlockHash.Hex(),
-			BlockTime:   block.Time(),
-			GasUsed:     *gasUsed,
-			Status:      string(types.UnconfirmedL1ToL2Message),
+			Type:              "deposit",
+			ERC20:             false,
+			From:              log.From.Hex(),
+			To:                log.To.Hex(),
+			Value:             log.Amount.String(),
+			Message:           hex.EncodeToString(message.Message),
+			MessageHash:       messageHash.Hex(),
+			TxHash:            log.Raw.TxHash.Hex(),
+			BlockNumber:       log.Raw.BlockNumber,
+			BlockHash:         log.Raw.BlockHash.Hex(),
+			BlockTime:         block.Time(),
+			GasUsed:           *gasUsed,
+			EffectiveGasPrice: *effectiveGasPrice,
+			Status:            string(types.UnconfirmedL1ToL2Message),
 		})
 	}
 
@@ -154,7 +155,7 @@ func (i *Indexer) indexL1Deposits(startBlock uint64, endBlock uint64) error {
 	for erc20Iter.Next() {
 		log := erc20Iter.Event
 
-		message, gasUsed, err := i.txToCrossChainMessageV1(log.Raw.TxHash)
+		message, gasUsed, effectiveGasPrice, err := i.txToCrossChainMessageV1(log.Raw.TxHash)
 		if err != nil {
 			return fmt.Errorf("failed to convert tx to cross chain message: %w", err)
 		}
@@ -168,21 +169,22 @@ func (i *Indexer) indexL1Deposits(startBlock uint64, endBlock uint64) error {
 		}
 
 		deposits = append(deposits, models.Transaction{
-			Type:        "deposit",
-			ERC20:       true,
-			From:        log.From.Hex(),
-			To:          log.To.Hex(),
-			Value:       log.Amount.String(),
-			L1Token:     log.LocalToken.Hex(),
-			L2Token:     log.RemoteToken.Hex(),
-			Message:     hex.EncodeToString(message.Message),
-			MessageHash: messageHash.Hex(),
-			TxHash:      log.Raw.TxHash.Hex(),
-			BlockNumber: log.Raw.BlockNumber,
-			BlockHash:   log.Raw.BlockHash.Hex(),
-			BlockTime:   block.Time(),
-			GasUsed:     *gasUsed,
-			Status:      string(types.UnconfirmedL1ToL2Message),
+			Type:              "deposit",
+			ERC20:             true,
+			From:              log.From.Hex(),
+			To:                log.To.Hex(),
+			Value:             log.Amount.String(),
+			L1Token:           log.LocalToken.Hex(),
+			L2Token:           log.RemoteToken.Hex(),
+			Message:           hex.EncodeToString(message.Message),
+			MessageHash:       messageHash.Hex(),
+			TxHash:            log.Raw.TxHash.Hex(),
+			BlockNumber:       log.Raw.BlockNumber,
+			BlockHash:         log.Raw.BlockHash.Hex(),
+			BlockTime:         block.Time(),
+			GasUsed:           *gasUsed,
+			EffectiveGasPrice: *effectiveGasPrice,
+			Status:            string(types.UnconfirmedL1ToL2Message),
 		})
 	}
 
@@ -230,12 +232,13 @@ func (i *Indexer) indexL1FilterWithdrawalProven(startBlock uint64, endBlock uint
 
 		// Create withdrawal proven record
 		if _, err := i.database.CreateTransactionProven(context.Background(), models.TransactionProven{
-			WithdrawalHash: common.Hash(log.WithdrawalHash).Hex(),
-			TxHash:         log.Raw.TxHash.Hex(),
-			BlockNumber:    log.Raw.BlockNumber,
-			Timestamp:      outputRoot.Timestamp.Uint64(),
-			L2OutputIndex:  outputRoot.L2OutputIndex.Uint64(),
-			GasUsed:        receipt.GasUsed,
+			WithdrawalHash:    common.Hash(log.WithdrawalHash).Hex(),
+			TxHash:            log.Raw.TxHash.Hex(),
+			BlockNumber:       log.Raw.BlockNumber,
+			Timestamp:         outputRoot.Timestamp.Uint64(),
+			L2OutputIndex:     outputRoot.L2OutputIndex.Uint64(),
+			GasUsed:           receipt.GasUsed,
+			EffectiveGasPrice: receipt.EffectiveGasPrice.Uint64(),
 		}); err != nil {
 			return fmt.Errorf("failed to create withdrawal proven: %w", err)
 		}
@@ -280,11 +283,12 @@ func (i *Indexer) indexL1FilterWithdrawalFinalized(startBlock uint64, endBlock u
 
 		// Create withdrawal finalized
 		if _, err := i.database.CreateTransactionFinalized(context.Background(), models.TransactionFinalized{
-			WithdrawalHash: common.Hash(log.WithdrawalHash).Hex(),
-			TxHash:         log.Raw.TxHash.Hex(),
-			BlockNumber:    log.Raw.BlockNumber,
-			Timestamp:      block.Time(),
-			GasUsed:        receipt.GasUsed,
+			WithdrawalHash:    common.Hash(log.WithdrawalHash).Hex(),
+			TxHash:            log.Raw.TxHash.Hex(),
+			BlockNumber:       log.Raw.BlockNumber,
+			Timestamp:         block.Time(),
+			GasUsed:           receipt.GasUsed,
+			EffectiveGasPrice: receipt.EffectiveGasPrice.Uint64(),
 		}); err != nil {
 			return fmt.Errorf("failed to create withdrawal finalized: %w", err)
 		}

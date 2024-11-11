@@ -89,31 +89,66 @@ func (db *Database) BatchCreateTransactions(ctx context.Context, txs []models.Tr
 		return nil
 	}
 
+	operations := make([]mongo.WriteModel, len(txs))
 	now := time.Now()
-	documents := make([]interface{}, len(txs))
+
 	for i, tx := range txs {
-		tx.CreatedAt = now
-		tx.UpdatedAt = now
-		documents[i] = tx
+		filter := bson.D{
+			{Key: "tx_hash", Value: tx.TxHash},
+			{Key: "type", Value: tx.Type},
+		}
+
+		// Create a separate document for the main data
+		mainDoc := bson.D{
+			{Key: "type", Value: tx.Type},
+			{Key: "erc20", Value: tx.ERC20},
+			{Key: "status", Value: tx.Status},
+			{Key: "tx_hash", Value: tx.TxHash},
+			{Key: "block_number", Value: tx.BlockNumber},
+			{Key: "block_hash", Value: tx.BlockHash},
+			{Key: "block_time", Value: tx.BlockTime},
+			{Key: "gas_used", Value: tx.GasUsed},
+			{Key: "effective_gas_price", Value: tx.EffectiveGasPrice},
+			{Key: "from", Value: tx.From},
+			{Key: "to", Value: tx.To},
+			{Key: "value", Value: tx.Value},
+			{Key: "l1_token", Value: tx.L1Token},
+			{Key: "l2_token", Value: tx.L2Token},
+			{Key: "message", Value: tx.Message},
+			{Key: "message_hash", Value: tx.MessageHash},
+			{Key: "withdrawal_hash", Value: tx.WithdrawalHash},
+		}
+
+		update := bson.D{
+			{Key: "$set", Value: mainDoc},
+			{Key: "$setOnInsert", Value: bson.D{
+				{Key: "created_at", Value: now},
+			}},
+			{Key: "$currentDate", Value: bson.D{
+				{Key: "updated_at", Value: true},
+			}},
+		}
+
+		operations[i] = mongo.NewUpdateOneModel().
+			SetFilter(filter).
+			SetUpdate(update).
+			SetUpsert(true)
 	}
 
-	_, err := db.client.Database(db.databaseName).Collection("transactions").InsertMany(
-		ctx,
-		documents,
-		options.InsertMany().SetOrdered(false),
-	)
+	collection := db.client.Database(db.databaseName).Collection("transactions")
+	opts := options.BulkWrite().SetOrdered(false)
 
+	_, err := collection.BulkWrite(ctx, operations, opts)
 	if err != nil {
-		if writeErr, ok := err.(mongo.BulkWriteException); ok {
-			// Handle duplicate key errors
-			for _, writeError := range writeErr.WriteErrors {
-				if writeError.Code != 11000 { // Duplicate key error code
-					return err
-				}
+		if bulkErr, ok := err.(mongo.BulkWriteException); ok {
+			for _, writeErr := range bulkErr.WriteErrors {
+				db.logger.Error("bulk write error",
+					"index", writeErr.Index,
+					"code", writeErr.Code,
+					"message", writeErr.Message)
 			}
-			return nil
 		}
-		return err
+		return fmt.Errorf("failed to batch upsert transactions: %w", err)
 	}
 
 	return nil
