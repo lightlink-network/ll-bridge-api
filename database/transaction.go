@@ -16,19 +16,13 @@ import (
 func (db *Database) GetTransactionByHash(ctx context.Context, hash string) (*models.Transaction, error) {
 	collection := db.client.Database(db.databaseName).Collection("transactions")
 
-	opts := options.Find().
-		SetHint(bson.D{{Key: "tx_hash", Value: 1}}).
-		SetBatchSize(1)
-
-	cursor, err := collection.Find(ctx, bson.D{{Key: "tx_hash", Value: hash}}, opts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get transaction by hash: %w", err)
-	}
-	defer cursor.Close(ctx)
-
 	var transaction models.Transaction
-	if err := cursor.Decode(&transaction); err != nil {
-		return nil, fmt.Errorf("failed to decode transaction: %w", err)
+	err := collection.FindOne(ctx, bson.D{{Key: "tx_hash", Value: hash}}).Decode(&transaction)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, fmt.Errorf("transaction not found")
+		}
+		return nil, fmt.Errorf("failed to get transaction by hash: %w", err)
 	}
 
 	return &transaction, nil
