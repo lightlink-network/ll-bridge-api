@@ -38,6 +38,39 @@ func (db *Database) GetTransactions(ctx context.Context, filter models.Filter, p
 		return nil, fmt.Errorf("failed to get total count: %w", err)
 	}
 
+	actionNeededFilter := bson.D{
+		{Key: "$and", Value: bson.A{
+			mongoFilter,
+			bson.D{{Key: "status", Value: bson.M{
+				"$in": []string{
+					string(types.ReadyToProve),
+					string(types.ReadyForRelay),
+				},
+			}},
+			}},
+		}}
+	actionNeededCount, err := collection.CountDocuments(ctx, actionNeededFilter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get action needed count: %w", err)
+	}
+
+	pendingFilter := bson.D{
+		{Key: "$and", Value: bson.A{
+			mongoFilter,
+			bson.D{{Key: "status", Value: bson.M{
+				"$in": []string{
+					string(types.UnconfirmedL1ToL2Message),
+					string(types.StateRootNotPublished),
+					string(types.InChallengePeriod),
+				},
+			}},
+			}},
+		}}
+	pendingCount, err := collection.CountDocuments(ctx, pendingFilter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pending count: %w", err)
+	}
+
 	pipeline := mongo.Pipeline{
 		{{Key: "$match", Value: mongoFilter}},
 		{{Key: "$lookup", Value: bson.D{
@@ -77,10 +110,12 @@ func (db *Database) GetTransactions(ctx context.Context, filter models.Filter, p
 	}
 
 	return &models.PaginatedResult{
-		Items:      transactions,
-		TotalCount: totalCount,
-		Page:       page,
-		PageSize:   pageSize,
+		Items:        transactions,
+		TotalCount:   totalCount,
+		Page:         page,
+		PageSize:     pageSize,
+		ActionNeeded: actionNeededCount,
+		Pending:      pendingCount,
 	}, nil
 }
 
