@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -217,16 +218,39 @@ func (db *Database) GetTransactionsByStatus(ctx context.Context, status string, 
 }
 
 func (db *Database) GetTransactionsProvenByStatus(ctx context.Context, status string) ([]models.TransactionProven, error) {
-	transactions, err := db.GetTransactionsByStatus(ctx, status, "withdrawal")
-	if err != nil {
-		return nil, fmt.Errorf("failed to get transactions by status: %w", err)
+	collection := db.client.Database(db.databaseName).Collection("transactions")
+
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: bson.D{
+			{Key: "type", Value: "withdrawal"},
+			{Key: "status", Value: status},
+		}}},
+		{{Key: "$lookup", Value: bson.D{
+			{Key: "from", Value: "transactions_proven"},
+			{Key: "localField", Value: "withdrawal_hash"},
+			{Key: "foreignField", Value: "withdrawal_hash"},
+			{Key: "as", Value: "proven"},
+		}}},
+		{{Key: "$unwind", Value: "$proven"}},
+		{{Key: "$replaceRoot", Value: bson.D{
+			{Key: "newRoot", Value: "$proven"},
+		}}},
 	}
 
-	provenTransactions := make([]models.TransactionProven, len(transactions))
-	for i, transaction := range transactions {
-		provenTransactions[i] = models.TransactionProven{
-			WithdrawalHash: transaction.WithdrawalHash,
-		}
+	cursor, err := collection.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("failed to aggregate transactions: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var provenTransactions []models.TransactionProven
+	if err := cursor.All(ctx, &provenTransactions); err != nil {
+		return nil, fmt.Errorf("failed to decode transactions: %w", err)
+	}
+
+	log.Printf("Found %d proven transactions for status %s", len(provenTransactions), status)
+	for _, tx := range provenTransactions {
+		log.Printf("Proven tx: hash=%s, l2OutputIndex=%d", tx.WithdrawalHash, tx.L2OutputIndex)
 	}
 
 	return provenTransactions, nil
