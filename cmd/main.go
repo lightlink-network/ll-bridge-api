@@ -73,6 +73,11 @@ func main() {
 		log.Fatalf("failed to parse L1_FETCH_INTERVAL: %v", err)
 	}
 
+	l1FinalizationSeconds, err := strconv.ParseUint(os.Getenv("L1_FINALIZATION_SECONDS"), 10, 64)
+	if err != nil {
+		log.Fatalf("failed to parse L1_FINALIZATION_SECONDS: %v", err)
+	}
+
 	// L2
 
 	l2DefaultStartBlock, err := strconv.ParseUint(os.Getenv("L2_DEFAULT_START_BLOCK"), 10, 64)
@@ -121,6 +126,7 @@ func main() {
 			MaxBatchSize:                  l1MaxBatchSize,
 			MinBatchSize:                  l1MinBatchSize,
 			FetchInterval:                 l1FetchInterval,
+			FinalizationSeconds:           l1FinalizationSeconds,
 		},
 		Database: &database.DatabaseOpts{
 			URI:          os.Getenv("DATABASE_URI"),

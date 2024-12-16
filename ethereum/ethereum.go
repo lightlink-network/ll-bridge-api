@@ -39,6 +39,7 @@ type ClientOpts struct {
 	MaxBatchSize                  uint64
 	MinBatchSize                  uint64
 	FetchInterval                 uint64
+	FinalizationSeconds           uint64
 }
 
 // NewEthereumRPC returns a new EthereumRPC client over HTTP.

@@ -28,6 +28,7 @@ func (i *Indexer) indexEthereum(ctx context.Context) error {
 
 	go i.CheckWithdrawalFinalizedStatus(ctx)
 	go i.CheckWithdrawalProvenStatus(ctx)
+	go i.CheckWithdrawalReadyToFinalize(ctx)
 
 	i.logger.Info("starting ethereum indexer", "startBlock", start)
 
@@ -298,7 +299,6 @@ func (i *Indexer) indexL1FilterWithdrawalFinalized(startBlock uint64, endBlock u
 }
 
 // Every time an output is proposed, we check if any withdrawals awaiting an output root are ready to be proven
-// We also need to check if any of the withdrawals that are in the challenge period can now be relayed/finalized
 func (i *Indexer) indexL2OutputProposed(startBlock uint64, endBlock uint64) error {
 	opts := bind.FilterOpts{
 		Start: startBlock,
@@ -320,25 +320,6 @@ func (i *Indexer) indexL2OutputProposed(startBlock uint64, endBlock uint64) erro
 			return fmt.Errorf("failed to update withdrawal statuses to ready to prove: %w", err)
 		}
 
-		// get all proven withdrawals that correspond to the withdrawals with a status of InChallengePeriod
-		provenWithdrawals, err := i.database.GetTransactionsProvenByStatus(context.Background(), string(types.InChallengePeriod))
-		if err != nil {
-			return fmt.Errorf("failed to get proven withdrawals: %w", err)
-		}
-
-		// calls LLPortal isOutputFinalized function for each withdrawal that has a status of InChallengePeriod and if true sets status to ReadyToRelay
-		for _, withdrawal := range provenWithdrawals {
-			isFinalized, err := i.ethereum.IsOutputFinalized(nil, big.NewInt(int64(withdrawal.L2OutputIndex)))
-			if err != nil {
-				return fmt.Errorf("failed to check if output is finalized: %w", err)
-			}
-
-			if isFinalized {
-				if err := i.database.UpdateTransactionStatusByWithdrawalHash(context.Background(), withdrawal.WithdrawalHash, string(types.ReadyForRelay)); err != nil {
-					return fmt.Errorf("failed to update withdrawal status: %w", err)
-				}
-			}
-		}
 	}
 
 	return nil
@@ -424,6 +405,36 @@ func (i *Indexer) CheckWithdrawalFinalizedStatus(ctx context.Context) error {
 					}
 					i.logger.Info("updated withdrawal status to Relayed",
 						"withdrawalHash", withdrawal.WithdrawalHash)
+				}
+			}
+
+			// Sleep for StatusCheckInterval seconds before next check
+			time.Sleep(time.Duration(i.ethereum.Opts.StatusCheckInterval) * time.Second)
+		}
+	}
+}
+
+func (i *Indexer) CheckWithdrawalReadyToFinalize(ctx context.Context) error {
+	// Run in a loop with a sleep interval
+	for {
+		select {
+		case <-ctx.Done():
+			i.logger.Info("shutting down withdrawal finalized status checker")
+			return nil
+		default:
+			// get all proven withdrawals that correspond to the withdrawals with a status of InChallengePeriod
+			provenWithdrawals, err := i.database.GetTransactionsProvenByStatus(context.Background(), string(types.InChallengePeriod))
+			if err != nil {
+				return fmt.Errorf("failed to get proven withdrawals: %w", err)
+			}
+
+			// check if the withdrawal challenge period has ended and if so set status to ReadyForRelay
+			for _, withdrawal := range provenWithdrawals {
+
+				if time.Now().Unix() > int64(withdrawal.Timestamp+i.ethereum.Opts.FinalizationSeconds) {
+					if err := i.database.UpdateTransactionStatusByWithdrawalHash(context.Background(), withdrawal.WithdrawalHash, string(types.ReadyForRelay)); err != nil {
+						return fmt.Errorf("failed to update withdrawal status: %w", err)
+					}
 				}
 			}
 
